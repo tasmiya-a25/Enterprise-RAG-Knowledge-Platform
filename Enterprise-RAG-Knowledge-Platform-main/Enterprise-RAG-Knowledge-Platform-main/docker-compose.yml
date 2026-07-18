@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rag_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rag_user
+      POSTGRES_PASSWORD: rag_password
+      POSTGRES_DB: rag_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_user -d rag_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: rag_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
+      # Local/embedded Qdrant by default -- persisted to a named volume.
+      # Set QDRANT_URL=http://qdrant:6333 instead if you add a Qdrant
+      # server service to this file for higher-scale deployments.
+      QDRANT_LOCAL_PATH: /app/storage/qdrant
+      UPLOAD_DIR: /app/storage/uploads
+      SECRET_KEY: ${SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_32_CHARS_MIN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CORS_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_storage:/app/storage
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: rag_frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres_data:
+  backend_storage:
